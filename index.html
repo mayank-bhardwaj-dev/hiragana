@@ -30,6 +30,16 @@
   .check-item input { width: 18px; height: 18px; accent-color: #d6336c; }
   .small-btn { padding: 8px 12px; font-size: 14px; }
   .row-btns { display: flex; gap: 10px; margin-bottom: 12px; justify-content: center; }
+  .mode-switch { display: flex; gap: 8px; margin-bottom: 16px; }
+  .mode-switch button { flex: 1; font-weight: 600; }
+  .mode-switch button.active { background: #d6336c; color: #fff; border-color: #d6336c; }
+  .type-input { width: 100%; font-size: 24px; text-align: center; padding: 12px; border: 2px solid #f1c0cf; border-radius: 10px; outline: none; }
+  .type-input:focus { border-color: #d6336c; }
+  .type-input.correct { background: #b2f2bb; border-color: #51cf66; }
+  .type-input.wrong { background: #ffc9c9; border-color: #ff6b6b; }
+  .feedback { text-align: center; min-height: 28px; margin: 10px 0; font-size: 18px; font-weight: 600; }
+  .feedback.ok { color: #2b8a3e; }
+  .feedback.bad { color: #c92a2a; }
 </style>
 </head>
 <body>
@@ -38,6 +48,11 @@
 
   <!-- MENU -->
   <div id="menu">
+    <p style="text-align:center; margin-bottom:8px">Choose a mode</p>
+    <div class="mode-switch">
+      <button id="modeMCQ" class="active" onclick="setMode('mcq')">Multiple choice</button>
+      <button id="modeType" onclick="setMode('type')">Typing</button>
+    </div>
     <p style="text-align:center">Choose a test</p>
     <div class="grid" id="testButtons"></div>
   </div>
@@ -60,7 +75,13 @@
     <div class="progress" id="progress"></div>
     <div class="kana" id="kana"></div>
     <div class="grid" id="options"></div>
-    <button class="back" onclick="showMenu()">Back to tests</button>
+    <div id="typeArea" class="hidden">
+      <input id="typeInput" class="type-input" type="text" placeholder="Type the reading (e.g. ka)" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+      <div class="feedback" id="feedback"></div>
+      <button class="back" style="margin-top:0" id="checkBtn" onclick="checkTyped()">Check</button>
+    </div>
+    <button class="back" id="nextBtn" style="background:#2b8a3e" onclick="goNext()" disabled>Next</button>
+    <button class="back" style="background:#868e96" onclick="showMenu()">Back to tests</button>
   </div>
 
   <!-- RESULT -->
@@ -100,6 +121,12 @@ const tests = [
 
 let currentTest = 0, currentName = '', questions = [], pool = [], qIndex = 0, score = 0, locked = false;
 let customSelection = new Set();
+let mode = 'mcq';
+
+// Alternate spellings accepted in typing mode (display never changes)
+const ALT = {
+  shi:['si'], chi:['ti'], tsu:['tu'], fu:['hu'], wo:['o'], n:['nn']
+};
 let lastWasCustom = false;
 
 const $ = id => document.getElementById(id);
@@ -127,6 +154,12 @@ function buildMenu() {
 function showMenu() {
   hideAll();
   $('menu').classList.remove('hidden');
+}
+
+function setMode(m) {
+  mode = m;
+  $('modeMCQ').classList.toggle('active', m === 'mcq');
+  $('modeType').classList.toggle('active', m === 'type');
 }
 
 /* ---------- CUSTOM PICKER ---------- */
@@ -206,6 +239,22 @@ function showQuestion() {
   const key = questions[qIndex];
   $('progress').textContent = `${currentName} — Question ${qIndex+1} of ${questions.length}`;
   $('kana').textContent = H[key];
+  $('nextBtn').disabled = true;
+  $('nextBtn').textContent = qIndex + 1 < questions.length ? 'Next' : 'Finish';
+
+  if (mode === 'type') {
+    $('options').classList.add('hidden');
+    $('typeArea').classList.remove('hidden');
+    const inp = $('typeInput');
+    inp.value = ''; inp.disabled = false;
+    inp.className = 'type-input';
+    $('feedback').textContent = ''; $('feedback').className = 'feedback';
+    $('checkBtn').disabled = false;
+    inp.focus();
+    return;
+  }
+  $('typeArea').classList.add('hidden');
+  $('options').classList.remove('hidden');
 
   // Wrong options come only from the chosen test(s), so there is no hint
   let wrongs = shuffle(pool.filter(k => k !== key)).slice(0, 3);
@@ -232,12 +281,46 @@ function answer(btn, chosen, correct) {
     btn.classList.add('wrong');
     [...$('options').children].forEach(b => { if (b.textContent === correct) b.classList.add('correct'); });
   }
-  setTimeout(() => {
-    qIndex++;
-    if (qIndex < questions.length) showQuestion();
-    else showResult();
-  }, 900);
+  $('nextBtn').disabled = false;
+  $('nextBtn').focus();
 }
+
+function goNext() {
+  if (!locked) return;
+  qIndex++;
+  if (qIndex < questions.length) showQuestion();
+  else showResult();
+}
+
+function checkTyped() {
+  if (locked) return;
+  const key = questions[qIndex];
+  const typed = $('typeInput').value.trim().toLowerCase();
+  if (!typed) return;
+  locked = true;
+  const accepted = [key, ...(ALT[key] || [])];
+  const inp = $('typeInput');
+  inp.disabled = true;
+  $('checkBtn').disabled = true;
+  if (accepted.includes(typed)) {
+    score++;
+    inp.classList.add('correct');
+    $('feedback').textContent = '✓ Correct!';
+    $('feedback').className = 'feedback ok';
+  } else {
+    inp.classList.add('wrong');
+    $('feedback').textContent = `✗ Correct answer: ${key}`;
+    $('feedback').className = 'feedback bad';
+  }
+  $('nextBtn').disabled = false;
+  $('nextBtn').focus();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || $('quiz').classList.contains('hidden') || mode !== 'type') return;
+  e.preventDefault();
+  if (locked) goNext(); else checkTyped();
+});
 
 function showResult() {
   hideAll();
