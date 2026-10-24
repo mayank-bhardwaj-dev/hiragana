@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hiragana Quiz</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; background: #fff5f5; margin: 0; padding: 20px; color: #333; }
+  .container { max-width: 520px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 24px; box-shadow: 0 4px 16px rgba(0,0,0,.08); }
+  h1 { text-align: center; color: #d6336c; margin-top: 0; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  button { font-size: 16px; padding: 14px; border: 2px solid #f1c0cf; background: #fff; border-radius: 10px; cursor: pointer; transition: .15s; }
+  button:hover { background: #ffe3ec; }
+  .kana { font-size: 96px; text-align: center; margin: 10px 0; }
+  .progress { text-align: center; color: #888; margin-bottom: 6px; }
+  .correct { background: #b2f2bb !important; border-color: #51cf66; }
+  .wrong { background: #ffc9c9 !important; border-color: #ff6b6b; }
+  .score { text-align: center; font-size: 22px; margin: 20px 0; }
+  .back { margin-top: 16px; width: 100%; background: #d6336c; color: #fff; border: none; }
+  .back:hover { background: #b02a5a; }
+  .back:disabled { background: #ccc; cursor: not-allowed; }
+  .hidden { display: none; }
+  .custom-btn { grid-column: 1 / -1; background: #fff0f6; border-color: #d6336c; color: #d6336c; font-weight: 600; }
+  .custom-title { text-align: center; margin: 0 0 6px; }
+  .custom-hint { text-align: center; color: #888; font-size: 14px; margin-bottom: 12px; }
+  .check-item { display: flex; align-items: center; gap: 10px; padding: 12px; border: 2px solid #f1c0cf; border-radius: 10px; cursor: pointer; user-select: none; }
+  .check-item:hover { background: #ffe3ec; }
+  .check-item.selected { background: #ffe3ec; border-color: #d6336c; }
+  .check-item input { width: 18px; height: 18px; accent-color: #d6336c; }
+  .small-btn { padding: 8px 12px; font-size: 14px; }
+  .row-btns { display: flex; gap: 10px; margin-bottom: 12px; justify-content: center; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>ひらがな Quiz</h1>
+
+  <!-- MENU -->
+  <div id="menu">
+    <p style="text-align:center">Choose a test</p>
+    <div class="grid" id="testButtons"></div>
+  </div>
+
+  <!-- CUSTOM TEST PICKER -->
+  <div id="custom" class="hidden">
+    <h3 class="custom-title">Custom Test</h3>
+    <p class="custom-hint">Pick one or more tests to mix together</p>
+    <div class="row-btns">
+      <button class="small-btn" onclick="selectAll(true)">Select all</button>
+      <button class="small-btn" onclick="selectAll(false)">Clear</button>
+    </div>
+    <div class="grid" id="checkList"></div>
+    <button class="back" id="startCustom" onclick="startCustomTest()" disabled>Start Custom Test</button>
+    <button class="back" style="background:#868e96" onclick="showMenu()">Back to tests</button>
+  </div>
+
+  <!-- QUIZ -->
+  <div id="quiz" class="hidden">
+    <div class="progress" id="progress"></div>
+    <div class="kana" id="kana"></div>
+    <div class="grid" id="options"></div>
+    <button class="back" onclick="showMenu()">Back to tests</button>
+  </div>
+
+  <!-- RESULT -->
+  <div id="result" class="hidden">
+    <div class="score" id="score"></div>
+    <button class="back" onclick="retry()">Retry</button>
+    <button class="back" style="background:#868e96" onclick="showMenu()">Back to tests</button>
+  </div>
+</div>
+
+<script>
+const H = {
+  a:'あ', i:'い', u:'う', e:'え', o:'お',
+  ka:'か', ki:'き', ku:'く', ke:'け', ko:'こ',
+  sa:'さ', shi:'し', su:'す', se:'せ', so:'そ',
+  ta:'た', chi:'ち', tsu:'つ', te:'て', to:'と',
+  na:'な', ni:'に', nu:'ぬ', ne:'ね', no:'の',
+  ha:'は', hi:'ひ', fu:'ふ', he:'へ', ho:'ほ',
+  ma:'ま', mi:'み', mu:'む', me:'め', mo:'も',
+  ya:'や', yu:'ゆ', yo:'よ',
+  ra:'ら', ri:'り', ru:'る', re:'れ', ro:'ろ',
+  wa:'わ', wo:'を', n:'ん'
+};
+
+const tests = [
+  { name: 'Test 1: A-row',  keys: ['a','i','u','e','o'] },
+  { name: 'Test 2: KA-row', keys: ['ka','ki','ku','ke','ko'] },
+  { name: 'Test 3: SA-row', keys: ['sa','shi','su','se','so'] },
+  { name: 'Test 4: TA-row', keys: ['ta','chi','tsu','te','to'] },
+  { name: 'Test 5: NA-row', keys: ['na','ni','nu','ne','no'] },
+  { name: 'Test 6: HA-row', keys: ['ha','hi','fu','he','ho'] },
+  { name: 'Test 7: MA-row', keys: ['ma','mi','mu','me','mo'] },
+  { name: 'Test 8: YA + RA rows', keys: ['ya','yu','yo','ra','ri','ru','re','ro'] },
+  { name: 'Test 9: WA, WO, N', keys: ['wa','wo','n'] },
+  { name: 'Test 10: Mixed Review', keys: Object.keys(H), limit: 15 }
+];
+
+let currentTest = 0, currentName = '', questions = [], pool = [], qIndex = 0, score = 0, locked = false;
+let customSelection = new Set();
+let lastWasCustom = false;
+
+const $ = id => document.getElementById(id);
+const shuffle = arr => arr.map(v => [Math.random(), v]).sort((a,b) => a[0]-b[0]).map(x => x[1]);
+
+function hideAll() {
+  ['menu','custom','quiz','result'].forEach(id => $(id).classList.add('hidden'));
+}
+
+function buildMenu() {
+  $('testButtons').innerHTML = '';
+  tests.forEach((t, i) => {
+    const b = document.createElement('button');
+    b.textContent = t.name;
+    b.onclick = () => startTest(i);
+    $('testButtons').appendChild(b);
+  });
+  const c = document.createElement('button');
+  c.className = 'custom-btn';
+  c.textContent = '✨ Custom Test (mix your own)';
+  c.onclick = showCustom;
+  $('testButtons').appendChild(c);
+}
+
+function showMenu() {
+  hideAll();
+  $('menu').classList.remove('hidden');
+}
+
+/* ---------- CUSTOM PICKER ---------- */
+function showCustom() {
+  hideAll();
+  $('custom').classList.remove('hidden');
+  buildCheckList();
+}
+
+function buildCheckList() {
+  $('checkList').innerHTML = '';
+  // Tests 1-9 only, since Test 10 is already a mix of everything
+  tests.slice(0, 9).forEach((t, i) => {
+    const label = document.createElement('label');
+    label.className = 'check-item' + (customSelection.has(i) ? ' selected' : '');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = customSelection.has(i);
+    cb.onchange = () => {
+      cb.checked ? customSelection.add(i) : customSelection.delete(i);
+      label.classList.toggle('selected', cb.checked);
+      updateStartButton();
+    };
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(t.name));
+    $('checkList').appendChild(label);
+  });
+  updateStartButton();
+}
+
+function selectAll(on) {
+  customSelection = new Set(on ? tests.slice(0, 9).map((_, i) => i) : []);
+  buildCheckList();
+}
+
+function updateStartButton() {
+  const n = customSelection.size;
+  const btn = $('startCustom');
+  btn.disabled = n < 1;
+  btn.textContent = n < 1 ? 'Pick at least one test' : `Start Custom Test (${n} selected)`;
+}
+
+function startCustomTest() {
+  if (customSelection.size < 1) return;
+  const picked = [...customSelection].sort((a, b) => a - b);
+  const keys = [...new Set(picked.flatMap(i => tests[i].keys))];
+  const label = 'Custom: ' + picked.map(i => 'T' + (i + 1)).join(' + ');
+  lastWasCustom = true;
+  begin(label, keys, null, keys);
+}
+
+/* ---------- QUIZ ENGINE ---------- */
+function startTest(i) {
+  lastWasCustom = false;
+  currentTest = i;
+  const t = tests[i];
+  begin(t.name, t.keys, t.limit, t.keys);
+}
+
+function begin(name, keys, limit, poolKeys) {
+  pool = poolKeys;
+  currentName = name;
+  questions = shuffle(keys).slice(0, limit || keys.length);
+  qIndex = 0; score = 0;
+  hideAll();
+  $('quiz').classList.remove('hidden');
+  showQuestion();
+}
+
+function retry() {
+  if (lastWasCustom) startCustomTest();
+  else startTest(currentTest);
+}
+
+function showQuestion() {
+  locked = false;
+  const key = questions[qIndex];
+  $('progress').textContent = `${currentName} — Question ${qIndex+1} of ${questions.length}`;
+  $('kana').textContent = H[key];
+
+  // Wrong options come only from the chosen test(s), so there is no hint
+  let wrongs = shuffle(pool.filter(k => k !== key)).slice(0, 3);
+  // If the pool is too small (like Test 9), top up with other characters
+  if (wrongs.length < 3) {
+    const extra = shuffle(Object.keys(H).filter(k => k !== key && !wrongs.includes(k)));
+    wrongs = wrongs.concat(extra.slice(0, 3 - wrongs.length));
+  }
+  const options = shuffle([key, ...wrongs]);
+  $('options').innerHTML = '';
+  options.forEach(opt => {
+    const b = document.createElement('button');
+    b.textContent = opt;
+    b.onclick = () => answer(b, opt, key);
+    $('options').appendChild(b);
+  });
+}
+
+function answer(btn, chosen, correct) {
+  if (locked) return;
+  locked = true;
+  if (chosen === correct) { score++; btn.classList.add('correct'); }
+  else {
+    btn.classList.add('wrong');
+    [...$('options').children].forEach(b => { if (b.textContent === correct) b.classList.add('correct'); });
+  }
+  setTimeout(() => {
+    qIndex++;
+    if (qIndex < questions.length) showQuestion();
+    else showResult();
+  }, 900);
+}
+
+function showResult() {
+  hideAll();
+  $('result').classList.remove('hidden');
+  const pct = Math.round(score / questions.length * 100);
+  $('score').innerHTML = `${currentName}<br>Score: ${score} / ${questions.length} (${pct}%)<br>${pct >= 80 ? '🎉 Great job!' : 'Keep practising!'}`;
+}
+
+buildMenu();
+</script>
+</body>
+</html>
